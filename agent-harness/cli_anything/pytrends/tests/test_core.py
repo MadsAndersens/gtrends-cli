@@ -4,6 +4,7 @@ Uses synthetic data and mocks — no external dependencies or network calls.
 """
 
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -325,3 +326,49 @@ class TestCoreFunctions:
         s._payload = None
         with pytest.raises(RuntimeError, match="No payload configured"):
             related_queries(s)
+
+
+# ── Output Flag Tests ─────────────────────────────────────────────────
+
+class TestOutputFlag:
+    """Tests for the --output / -o flag."""
+
+    def test_output_flag_writes_file(self, tmp_path):
+        from click.testing import CliRunner
+        from cli_anything.pytrends.pytrends_cli import cli
+
+        out_file = tmp_path / "result.txt"
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--json", "-o", str(out_file), "session", "show"])
+        assert out_file.exists()
+        content = out_file.read_text(encoding="utf-8")
+        assert len(content.strip()) > 0
+
+    def test_output_flag_creates_parent_dirs(self, tmp_path):
+        from click.testing import CliRunner
+        from cli_anything.pytrends.pytrends_cli import cli
+
+        out_file = tmp_path / "nested" / "dir" / "result.json"
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--json", "-o", str(out_file), "session", "show"])
+        assert out_file.exists()
+
+    def test_output_flag_stderr_confirmation(self, tmp_path, capsys):
+        from click.testing import CliRunner
+        from cli_anything.pytrends.pytrends_cli import cli
+
+        out_file = tmp_path / "result.json"
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--json", "-o", str(out_file), "session", "show"])
+        # Confirmation message goes to stderr via click.echo(err=True),
+        # but CliRunner captures both streams in output
+        assert "Saved to" in result.output
+
+    def test_no_output_flag_prints_stdout(self):
+        from click.testing import CliRunner
+        from cli_anything.pytrends.pytrends_cli import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--json", "session", "show"])
+        assert result.output.strip() != ""
+        assert "Saved to" not in result.output
