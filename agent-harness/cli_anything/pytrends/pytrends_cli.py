@@ -6,6 +6,7 @@ Usage:
 """
 
 import json
+import os
 import sys
 import traceback
 
@@ -36,8 +37,17 @@ def _get_session(ctx: click.Context) -> Session:
 def _output(ctx: click.Context, data, label: str = "result"):
     """Format and print output based on context flags."""
     fmt = ctx.obj.get("format", "table")
+    output_path = ctx.obj.get("output")
     try:
-        click.echo(format_output(data, fmt))
+        formatted = format_output(data, fmt)
+        if output_path:
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(formatted)
+                f.write("\n")
+            click.echo(f"Saved to {output_path}", err=True)
+        else:
+            click.echo(formatted)
     except Exception as e:
         if fmt == "json":
             click.echo(json.dumps({"error": str(e)}))
@@ -71,9 +81,10 @@ def _handle_error(ctx: click.Context, e: Exception):
 @click.group(invoke_without_command=True)
 @click.option("--json", "use_json", is_flag=True, help="Output in JSON format")
 @click.option("--csv", "use_csv", is_flag=True, help="Output in CSV format")
+@click.option("--output", "-o", "output_path", default=None, type=click.Path(), help="Write output to FILE instead of stdout")
 @click.version_option(version=__version__, prog_name="cli-anything-pytrends")
 @click.pass_context
-def cli(ctx, use_json, use_csv):
+def cli(ctx, use_json, use_csv, output_path):
     """CLI harness for Google Trends via pytrends."""
     ctx.ensure_object(dict)
     if use_json:
@@ -82,6 +93,7 @@ def cli(ctx, use_json, use_csv):
         ctx.obj["format"] = "csv"
     else:
         ctx.obj["format"] = "table"
+    ctx.obj["output"] = output_path
 
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
