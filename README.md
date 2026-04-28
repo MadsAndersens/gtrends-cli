@@ -23,6 +23,9 @@ cli-anything-pytrends trending now --pn united_states
 # Output as JSON for scripting
 cli-anything-pytrends --json search interest-over-time "AI"
 
+# Save a trend plot
+cli-anything-pytrends plot "python,javascript" --geo US --timeframe "today 12-m" --path trends.png
+
 # Launch interactive mode
 cli-anything-pytrends repl
 ```
@@ -43,6 +46,15 @@ cli-anything-pytrends search multirange "AI" --timeframes "today 1-y;today 5-y"
 ```
 
 Options: `--cat`, `--timeframe`, `--geo`, `--gprop`
+
+### plot - Save an interest-over-time chart
+
+```bash
+cli-anything-pytrends plot "python,javascript" --geo US --timeframe "today 12-m" --path output/trends.png
+cli-anything-pytrends plot "AI" --area GB --timeframe "today 3-m" --path output/ai-uk.svg
+```
+
+Options: `--cat`, `--timeframe`, `--geo`/`--area`, `--gprop`, `--title`, `--path`
 
 ### related — Related topics and queries
 
@@ -132,6 +144,7 @@ gtrends-cli/
         ├── core/
         │   ├── session.py     # Stateful session management
         │   ├── search.py      # interest_over_time, interest_by_region
+        │   ├── plotting.py    # Save interest-over-time plots
         │   ├── related.py     # related_topics, related_queries
         │   ├── trending.py    # trending/hot searches
         │   ├── explore.py     # suggestions, categories, top_charts

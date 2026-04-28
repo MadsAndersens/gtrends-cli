@@ -439,6 +439,32 @@ def daily_cmd(ctx, keyword, start, stop, geo, wait_time):
         _handle_error(ctx, e)
 
 
+# ── Plot Command ────────────────────────────────────────────────────────
+
+@cli.command("plot")
+@click.argument("keywords")
+@click.option("--path", "output_path", required=True, type=click.Path(dir_okay=False), help="File path for the saved plot")
+@click.option("--geo", "--area", default="", help="Geographic region/area (e.g., US, GB, US-NY)")
+@click.option("--timeframe", default="today 5-y", help="Time range (e.g., 'today 3-m')")
+@click.option("--cat", default=0, type=int, help="Category ID (0 = all)")
+@click.option("--gprop", default="", help="Search property (images, news, youtube, froogle)")
+@click.option("--title", default=None, help="Custom plot title")
+@click.pass_context
+def plot_cmd(ctx, keywords, output_path, geo, timeframe, cat, gprop, title):
+    """Save an interest-over-time plot for KEYWORDS."""
+    s = _get_session(ctx)
+    try:
+        kw_list = parse_keywords(keywords)
+        validate_gprop(gprop)
+        validate_timeframe(timeframe)
+        s.build_payload(kw_list=kw_list, cat=cat, timeframe=timeframe, geo=geo, gprop=gprop)
+        from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
+        result = save_interest_over_time_plot(s, output_path=output_path, title=title)
+        _output(ctx, result)
+    except Exception as e:
+        _handle_error(ctx, e)
+
+
 # ── REPL Mode ──────────────────────────────────────────────────────────
 
 @cli.command("repl")
@@ -502,6 +528,7 @@ def _repl_help() -> str:
   explore top-charts YEAR                       Top charts for year
 
   daily KEYWORD --start YYYY-MM --stop YYYY-MM  Daily scaled data
+  plot KEYWORDS --geo X --timeframe X --path P  Save trend plot
 
   help                                          Show this help
   quit                                          Exit REPL
@@ -518,6 +545,7 @@ def _dispatch_repl(ctx: click.Context, cmd: str, args: list):
         "trending": trending,
         "explore": explore,
         "daily": daily_cmd,
+        "plot": plot_cmd,
     }
 
     # Shorthand mappings

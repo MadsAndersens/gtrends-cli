@@ -328,6 +328,93 @@ class TestCoreFunctions:
             related_queries(s)
 
 
+# ── Plotting Tests ─────────────────────────────────────────────────────
+
+class TestPlotting:
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_save_interest_over_time_plot(self, mock_trendreq, tmp_path):
+        from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
+
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+        mock_client.interest_over_time.return_value = pd.DataFrame(
+            {"python": [20, 40], "javascript": [10, 60], "isPartial": [False, False]},
+            index=pd.to_datetime(["2025-01-01", "2025-02-01"]),
+        )
+
+        s = Session()
+        s.build_payload(kw_list=["python", "javascript"], timeframe="today 3-m", geo="US")
+
+        plot_path = tmp_path / "trends.png"
+        result = save_interest_over_time_plot(s, str(plot_path))
+
+        assert plot_path.exists()
+        assert result["path"] == str(plot_path.resolve())
+        assert result["keywords"] == ["python", "javascript"]
+        assert result["geo"] == "US"
+        assert result["timeframe"] == "today 3-m"
+        assert result["rows"] == 2
+        assert result["columns"] == ["python", "javascript"]
+
+    def test_save_interest_over_time_plot_no_payload(self, tmp_path):
+        from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
+
+        s = Session.__new__(Session)
+        s._payload = None
+
+        with pytest.raises(RuntimeError, match="No payload configured"):
+            save_interest_over_time_plot(s, str(tmp_path / "trends.png"))
+
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_save_interest_over_time_plot_empty_data(self, mock_trendreq, tmp_path):
+        from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
+
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+        mock_client.interest_over_time.return_value = pd.DataFrame()
+
+        s = Session()
+        s.build_payload(kw_list=["python"], timeframe="today 3-m", geo="US")
+
+        with pytest.raises(RuntimeError, match="No trend data returned"):
+            save_interest_over_time_plot(s, str(tmp_path / "trends.png"))
+
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_plot_cli_invocation(self, mock_trendreq, tmp_path):
+        from click.testing import CliRunner
+        import cli_anything.pytrends.pytrends_cli as cli_mod
+
+        cli_mod._session = None
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+        mock_client.interest_over_time.return_value = pd.DataFrame(
+            {"python": [35, 75], "isPartial": [False, False]},
+            index=pd.to_datetime(["2025-01-01", "2025-02-01"]),
+        )
+
+        plot_path = tmp_path / "plots" / "python.png"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli_mod.cli,
+            [
+                "plot",
+                "python",
+                "--geo",
+                "US",
+                "--timeframe",
+                "today 3-m",
+                "--path",
+                str(plot_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert plot_path.exists()
+        assert "path:" in result.output
+        assert mock_client.build_payload.call_args.kwargs["geo"] == "US"
+        assert mock_client.build_payload.call_args.kwargs["timeframe"] == "today 3-m"
+
+
 # ── Output Flag Tests ─────────────────────────────────────────────────
 
 class TestOutputFlag:

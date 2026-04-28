@@ -38,6 +38,9 @@ cli-anything-pytrends explore top-charts 2023
 # Daily data
 cli-anything-pytrends daily "bitcoin" --start 2023-01 --stop 2023-06
 
+# Save an interest-over-time plot
+cli-anything-pytrends plot "python,javascript" --geo US --timeframe "today 12-m" --path output/trends.png
+
 # Session management
 cli-anything-pytrends session init --hl en-US --tz 360
 cli-anything-pytrends session show
@@ -84,10 +87,12 @@ pytrends> quit
 | `explore` | `categories` | List all categories |
 | `explore` | `top-charts` | Top charts for a year |
 | `daily` | (root) | Daily data with monthly scaling |
+| `plot` | (root) | Save interest-over-time plot image |
 
 ## Options
 
 - `--json` : Output in JSON format (machine-readable)
 - `--csv` : Output in CSV format
+- `plot --path PATH` : Save a plot image to PATH
 - `--version` : Show version
 - `--help` : Show help for any command

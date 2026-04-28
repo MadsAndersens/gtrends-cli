@@ -15,6 +15,7 @@ output_formats:
   - table
   - json
   - csv
+  - image
 ---
 
 # cli-anything-pytrends
@@ -89,6 +90,13 @@ Fetch daily data with monthly scaling for accurate long-term comparison.
 cli-anything-pytrends daily "bitcoin" --start 2023-01 --stop 2023-12 --geo US
 ```
 
+### plot - Saved Trend Charts
+Save an interest-over-time chart image for one or more keywords.
+
+```bash
+cli-anything-pytrends plot "python,javascript" --geo US --timeframe "today 12-m" --path output/trends.png
+```
+
 ## Output Modes
 
 All commands support three output formats via global flags:
@@ -108,6 +116,7 @@ cli-anything-pytrends --csv search interest-over-time "python"
 
 - Keywords are comma-separated, max 5 per query (Google Trends limit)
 - Use `--json` for all agent-consumed output — structured and parseable
+- Use `plot --path FILE` when the user needs an image chart saved to disk
 - `search` and `related` commands auto-call `build_payload` — no separate setup needed
 - `trending`, `explore`, and `daily` commands are standalone (no payload required)
 - Rate limiting: Google Trends may return 429 errors; use `session init --retries 3 --backoff-factor 1`

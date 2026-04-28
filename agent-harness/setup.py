@@ -21,6 +21,7 @@ setup(
         "click>=8.0",
         "pandas>=1.0",
         "requests>=2.0",
+        "matplotlib>=3.0",
     ],
     entry_points={
         "console_scripts": [
