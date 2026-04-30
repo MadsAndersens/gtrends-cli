@@ -233,3 +233,54 @@ class TestCLISubprocess:
         assert result.returncode == 0
         assert "--path" in result.stdout
         assert "--timeframe" in result.stdout
+
+
+class TestCLIReportCommand:
+    """Test the composite `report` command — no-network paths only."""
+
+    def setup_method(self):
+        self.runner = CliRunner()
+        import cli_anything.pytrends.pytrends_cli as cli_mod
+        cli_mod._session = None
+
+    def test_report_appears_in_top_level_help(self):
+        result = self.runner.invoke(cli, ["--help"], obj={})
+        assert result.exit_code == 0
+        assert "report" in result.output
+
+    def test_report_help(self):
+        result = self.runner.invoke(cli, ["report", "--help"], obj={})
+        assert result.exit_code == 0
+        assert "--timeframe" in result.output
+        assert "--geos" in result.output
+        assert "--include" in result.output
+        assert "--top-related" in result.output
+
+    def test_report_missing_keyword(self):
+        result = self.runner.invoke(cli, ["report"], obj={})
+        assert result.exit_code != 0
+        assert "Missing argument" in result.output or "KEYWORD" in result.output
+
+    def test_report_rejects_invalid_include(self):
+        result = self.runner.invoke(
+            cli, ["report", "python", "--include", "iot,bogus"], obj={}
+        )
+        # ValueError is non-fatal in this CLI's _handle_error, so exit_code may be 0;
+        # the message should still surface (stderr in mix_stderr=True default).
+        assert "bogus" in result.output or "Invalid --include" in result.output
+
+    def test_report_rejects_invalid_timeframe_json(self):
+        result = self.runner.invoke(
+            cli, ["--json", "report", "python", "--timeframe", "garbage"], obj={}
+        )
+        data = json.loads(result.output)
+        assert "error" in data
+        assert "timeframe" in data["error"].lower() or "Invalid" in data["error"]
+
+    def test_report_rejects_multi_keyword(self):
+        result = self.runner.invoke(
+            cli, ["--json", "report", "python,javascript"], obj={}
+        )
+        data = json.loads(result.output)
+        assert "error" in data
+        assert "single-keyword" in data["error"]
