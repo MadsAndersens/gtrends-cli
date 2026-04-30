@@ -481,21 +481,46 @@ def daily_cmd(ctx, keyword, start, stop, geo, wait_time):
 @click.argument("keywords")
 @click.option("--path", "output_path", required=True, type=click.Path(dir_okay=False), help="File path for the saved plot")
 @click.option("--geo", "--area", default="", help="Geographic region/area (e.g., US, GB, US-NY)")
+@click.option("--geos", default=None, help="Comma-separated geo codes for a faceted multi-country plot (e.g., US,GB,DE)")
 @click.option("--timeframe", default="today 5-y", help="Time range (e.g., 'today 3-m')")
 @click.option("--cat", default=0, type=int, help="Category ID (0 = all)")
 @click.option("--gprop", default="", help="Search property (images, news, youtube, froogle)")
+@click.option("--wait-time", default=1.0, type=float, help="Seconds between requests when fetching multiple geos")
 @click.option("--title", default=None, help="Custom plot title")
 @click.pass_context
-def plot_cmd(ctx, keywords, output_path, geo, timeframe, cat, gprop, title):
-    """Save an interest-over-time plot for KEYWORDS."""
+def plot_cmd(ctx, keywords, output_path, geo, geos, timeframe, cat, gprop, wait_time, title):
+    """Save an interest-over-time plot for KEYWORDS.
+
+    Pass --geos for a faceted grid (one panel per country); each panel has
+    its own 0–100 axis since Google Trends values are not comparable across
+    geos. Use --geo for a single-country plot.
+    """
+    if geos and geo:
+        _handle_error(ctx, click.UsageError("Use either --geo or --geos, not both."))
+        return
     s = _get_session(ctx)
     try:
         kw_list = parse_keywords(keywords)
         validate_gprop(gprop)
         validate_timeframe(timeframe)
-        s.build_payload(kw_list=kw_list, cat=cat, timeframe=timeframe, geo=geo, gprop=gprop)
-        from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
-        result = save_interest_over_time_plot(s, output_path=output_path, title=title)
+        if geos:
+            geo_list = parse_geos(geos)
+            from cli_anything.pytrends.core.search import multi_geo_interest_over_time
+            from cli_anything.pytrends.core.plotting import save_multi_geo_plot
+            multi_result = multi_geo_interest_over_time(
+                session=s,
+                kw_list=kw_list,
+                geos=geo_list,
+                cat=cat,
+                timeframe=timeframe,
+                gprop=gprop,
+                wait_time=wait_time,
+            )
+            result = save_multi_geo_plot(multi_result, output_path=output_path, title=title)
+        else:
+            s.build_payload(kw_list=kw_list, cat=cat, timeframe=timeframe, geo=geo, gprop=gprop)
+            from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
+            result = save_interest_over_time_plot(s, output_path=output_path, title=title)
         _output(ctx, result)
     except Exception as e:
         _handle_error(ctx, e)
