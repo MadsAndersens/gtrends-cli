@@ -46,7 +46,13 @@ def save_interest_over_time_plot(
     ax.set_ylabel("Interest")
     ax.set_ylim(bottom=0)
     ax.grid(True, axis="y", alpha=0.3)
-    ax.legend(title="Keyword")
+    ax.legend(
+        title="Keyword",
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=max(1, len(plot_df.columns)),
+        frameon=False,
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
