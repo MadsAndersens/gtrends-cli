@@ -9,6 +9,8 @@ from typing import Optional
 
 from pytrends.request import TrendReq
 
+from cli_anything.pytrends.core.cache import DiskCache
+
 
 @dataclass
 class SessionConfig:
@@ -70,6 +72,25 @@ class Session:
         self.config = config or SessionConfig()
         self._client: Optional[TrendReq] = None
         self._payload: Optional[PayloadConfig] = None
+        self.cache: Optional[DiskCache] = None
+        self.cache_ttl: Optional[float] = None
+
+    def cache_key_inputs(self, extra: Optional[dict] = None) -> dict:
+        """Build the cache-key dict for the current payload + session config.
+
+        Includes session-level fields that affect upstream results (hl, tz)
+        plus the active payload. ``extra`` lets a caller mix in operation-
+        specific knobs like ``resolution``.
+        """
+        payload = self._payload.to_dict() if self._payload else {}
+        inputs = {
+            "hl": self.config.hl,
+            "tz": self.config.tz,
+            "payload": payload,
+        }
+        if extra:
+            inputs["extra"] = extra
+        return inputs
 
     @property
     def client(self) -> TrendReq:
