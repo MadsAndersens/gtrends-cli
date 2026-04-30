@@ -19,6 +19,7 @@ from cli_anything.pytrends.utils.formatting import (
     series_to_json,
 )
 from cli_anything.pytrends.utils.validators import (
+    parse_geos,
     parse_keywords,
     validate_gprop,
     validate_resolution,
@@ -295,6 +296,19 @@ class TestValidators:
         with pytest.raises(ValueError, match="maximum of 5"):
             parse_keywords("a,b,c,d,e,f")
 
+    def test_parse_geos_basic(self):
+        assert parse_geos("US,GB,DE") == ["US", "GB", "DE"]
+
+    def test_parse_geos_whitespace(self):
+        assert parse_geos("  us , gb , de  ") == ["US", "GB", "DE"]
+
+    def test_parse_geos_single(self):
+        assert parse_geos("US") == ["US"]
+
+    def test_parse_geos_empty(self):
+        with pytest.raises(ValueError, match="At least one geo code"):
+            parse_geos("")
+
 
 # ── Core Function Error Tests ──────────────────────────────────────────
 
@@ -326,6 +340,122 @@ class TestCoreFunctions:
         s._payload = None
         with pytest.raises(RuntimeError, match="No payload configured"):
             related_queries(s)
+
+
+# ── Multi-Geo Tests ───────────────────────────────────────────────────
+
+class TestMultiGeo:
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_multi_geo_returns_results_per_geo(self, mock_trendreq):
+        from cli_anything.pytrends.core.search import multi_geo_interest_over_time
+
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+
+        df = pd.DataFrame(
+            {"python": [80, 90], "javascript": [60, 70], "isPartial": [False, False]},
+            index=pd.to_datetime(["2025-01-01", "2025-01-08"]),
+        )
+        mock_client.interest_over_time.return_value = df
+
+        s = Session()
+        result = multi_geo_interest_over_time(
+            session=s,
+            kw_list=["python", "javascript"],
+            geos=["US", "GB"],
+            timeframe="today 3-m",
+            wait_time=0,
+        )
+
+        assert result["keywords"] == ["python", "javascript"]
+        assert result["timeframe"] == "today 3-m"
+        assert "US" in result["results"]
+        assert "GB" in result["results"]
+        assert set(result["geos"]) == {"US", "GB"}
+        # isPartial column should be dropped
+        assert "isPartial" not in result["results"]["US"].columns
+
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_multi_geo_handles_partial_failure(self, mock_trendreq):
+        from cli_anything.pytrends.core.search import multi_geo_interest_over_time
+
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+
+        df = pd.DataFrame({"python": [50]}, index=pd.to_datetime(["2025-01-01"]))
+        call_count = [0]
+
+        def side_effect():
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise RuntimeError("Rate limited")
+            return df
+
+        mock_client.interest_over_time.side_effect = side_effect
+
+        s = Session()
+        result = multi_geo_interest_over_time(
+            session=s,
+            kw_list=["python"],
+            geos=["US", "GB", "DE"],
+            wait_time=0,
+        )
+
+        assert "US" in result["results"]
+        assert "GB" not in result["results"]
+        assert "DE" in result["results"]
+        assert "errors" in result
+        assert "GB" in result["errors"]
+
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_multi_geo_build_payload_called_per_geo(self, mock_trendreq):
+        from cli_anything.pytrends.core.search import multi_geo_interest_over_time
+
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+        mock_client.interest_over_time.return_value = pd.DataFrame({"kw": [1]})
+
+        s = Session()
+        multi_geo_interest_over_time(
+            session=s, kw_list=["test"], geos=["US", "DE", "JP"], wait_time=0,
+        )
+
+        # build_payload should be called once per geo
+        assert mock_client.build_payload.call_count == 3
+        geo_args = [call.kwargs["geo"] for call in mock_client.build_payload.call_args_list]
+        assert geo_args == ["US", "DE", "JP"]
+
+    def test_multi_geo_cli_invocation(self):
+        """Test the CLI command wiring with Click's test runner."""
+        from click.testing import CliRunner
+        from cli_anything.pytrends.pytrends_cli import cli
+
+        runner = CliRunner()
+
+        # Missing --geos should fail
+        result = runner.invoke(cli, ["search", "multi-geo", "python"])
+        assert result.exit_code != 0
+
+    @patch("cli_anything.pytrends.core.session.TrendReq")
+    def test_multi_geo_json_output(self, mock_trendreq):
+        from click.testing import CliRunner
+        from cli_anything.pytrends.pytrends_cli import cli
+
+        mock_client = MagicMock()
+        mock_trendreq.return_value = mock_client
+        df = pd.DataFrame({"python": [100]}, index=pd.to_datetime(["2025-01-01"]))
+        mock_client.interest_over_time.return_value = df
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["--json", "search", "multi-geo", "python", "--geos", "US,GB", "--wait-time", "0"]
+        )
+        # Progress lines go to stderr but CliRunner mixes them; extract JSON
+        json_start = result.output.index("{")
+        parsed = json.loads(result.output[json_start:])
+        assert parsed["keywords"] == ["python"]
+        assert "US" in parsed["results"]
+        assert "GB" in parsed["results"]
 
 
 # ── Output Flag Tests ─────────────────────────────────────────────────

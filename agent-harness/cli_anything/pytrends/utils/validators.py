@@ -43,6 +43,15 @@ def validate_timeframe(timeframe: str) -> str:
     )
 
 
+def parse_geos(geo_string: str) -> list:
+    """Parse a comma-separated geo code string into a list."""
+    geos = [g.strip().upper() for g in geo_string.split(",")]
+    geos = [g for g in geos if g]
+    if not geos:
+        raise ValueError("At least one geo code is required (e.g., US,GB,DE).")
+    return geos
+
+
 def parse_keywords(kw_string: str) -> list:
     """Parse a comma-separated keyword string into a list."""
     keywords = [kw.strip() for kw in kw_string.split(",")]

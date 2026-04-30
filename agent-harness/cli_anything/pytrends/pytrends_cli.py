@@ -16,6 +16,7 @@ from cli_anything.pytrends import __version__
 from cli_anything.pytrends.core.session import Session, SessionConfig
 from cli_anything.pytrends.utils.formatting import format_output
 from cli_anything.pytrends.utils.validators import (
+    parse_geos,
     parse_keywords,
     validate_gprop,
     validate_resolution,
@@ -243,6 +244,41 @@ def search_multirange(ctx, keywords, cat, timeframes, geo, gprop):
         s.build_payload(kw_list=kw_list, cat=cat, timeframe=tf_list, geo=geo, gprop=gprop)
         from cli_anything.pytrends.core.search import multirange_interest_over_time
         result = multirange_interest_over_time(s)
+        _output(ctx, result)
+    except Exception as e:
+        _handle_error(ctx, e)
+
+
+@search.command("multi-geo")
+@click.argument("keywords")
+@click.option("--geos", required=True, help="Comma-separated geo codes (e.g., US,GB,DE,FR,JP)")
+@click.option("--cat", default=0, type=int, help="Category ID (0 = all)")
+@click.option("--timeframe", default="today 5-y", help="Time range (e.g., 'today 12-m')")
+@click.option("--gprop", default="", help="Search property (images, news, youtube, froogle)")
+@click.option("--wait-time", default=1.0, type=float, help="Seconds between requests (default 1.0)")
+@click.pass_context
+def search_multi_geo(ctx, keywords, geos, cat, timeframe, gprop, wait_time):
+    """Fetch interest over time for KEYWORDS across multiple countries.
+
+    All keywords are queried together per country so their interest values
+    are relative to each other within each geo. One API call per geo.
+    """
+    s = _get_session(ctx)
+    try:
+        kw_list = parse_keywords(keywords)
+        validate_gprop(gprop)
+        validate_timeframe(timeframe)
+        geo_list = parse_geos(geos)
+        from cli_anything.pytrends.core.search import multi_geo_interest_over_time
+        result = multi_geo_interest_over_time(
+            session=s,
+            kw_list=kw_list,
+            geos=geo_list,
+            cat=cat,
+            timeframe=timeframe,
+            gprop=gprop,
+            wait_time=wait_time,
+        )
         _output(ctx, result)
     except Exception as e:
         _handle_error(ctx, e)
@@ -489,6 +525,7 @@ def _repl_help() -> str:
   search iot KEYWORDS [--timeframe X] ...       Interest over time
   search ibr KEYWORDS [--resolution X] ...      Interest by region
   search multirange KEYWORDS --timeframes X     Multi-range interest
+  search multi-geo KEYWORDS --geos X            Interest across countries
 
   related topics KEYWORDS [--timeframe X]       Related topics
   related queries KEYWORDS [--timeframe X]      Related queries
@@ -524,6 +561,7 @@ def _dispatch_repl(ctx: click.Context, cmd: str, args: list):
     shorthand = {
         "iot": ["search", "interest-over-time"],
         "ibr": ["search", "interest-by-region"],
+        "mgeo": ["search", "multi-geo"],
         "suggestions": ["explore", "suggestions"],
         "categories": ["explore", "categories"],
     }
