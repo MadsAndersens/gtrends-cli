@@ -561,6 +561,126 @@ def plot_cmd(ctx, keywords, output_path, geo, geos, timeframe, cat, gprop, wait_
         _handle_error(ctx, e)
 
 
+# ── Report Command ──────────────────────────────────────────────────────
+
+REPORT_SECTIONS = ("iot", "multi_geo", "related", "by_region")
+DEFAULT_REPORT_GEOS = "US,GB,DE,FR,JP"
+DEFAULT_REPORT_TIMEFRAME = "today 12-m"
+DEFAULT_REPORT_INCLUDE = ",".join(REPORT_SECTIONS)
+
+
+def _parse_include(include: str) -> set:
+    """Parse and validate the --include section list."""
+    sections = {s.strip() for s in include.split(",") if s.strip()}
+    if not sections:
+        raise ValueError("--include must specify at least one section.")
+    invalid = sections - set(REPORT_SECTIONS)
+    if invalid:
+        raise ValueError(
+            f"Invalid --include section(s): {sorted(invalid)}. "
+            f"Valid sections: {list(REPORT_SECTIONS)}"
+        )
+    return sections
+
+
+def _reset_df_index(df):
+    """Reset DataFrame index so the index name (e.g. 'date', 'geoName') survives JSON serialization."""
+    import pandas as pd
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    return df.reset_index() if df.index.name else df
+
+
+@cli.command("report")
+@click.argument("keyword")
+@click.option("--timeframe", default=DEFAULT_REPORT_TIMEFRAME, show_default=True, help="Time range (e.g., 'today 12-m', 'today 5-y')")
+@click.option("--geos", default=DEFAULT_REPORT_GEOS, show_default=True, help="Comma-separated geo codes for the multi-geo section")
+@click.option("--include", default=DEFAULT_REPORT_INCLUDE, show_default=True, help=f"Comma-separated sections to include. Valid: {', '.join(REPORT_SECTIONS)}")
+@click.option("--top-related", default=10, show_default=True, type=int, help="Cap on top/rising rows per keyword in the related section")
+@click.option("--cat", default=0, type=int, help="Category ID (0 = all)")
+@click.option("--gprop", default="", help="Search property (images, news, youtube, froogle)")
+@click.option("--wait-time", default=1.0, type=float, help="Seconds between multi-geo requests")
+@click.pass_context
+def report_cmd(ctx, keyword, timeframe, geos, include, top_related, cat, gprop, wait_time):
+    """Run the standard dossier (iot, multi_geo, related, by_region) for KEYWORD in one call.
+
+    Continues on per-section failure: any section that 429s or errors out is
+    reported under an `errors` map alongside the sections that succeeded.
+    """
+    s = _get_session(ctx)
+    try:
+        kw_list = parse_keywords(keyword)
+        if len(kw_list) > 1:
+            raise ValueError("`report` is single-keyword for now; pass exactly one keyword.")
+        validate_gprop(gprop)
+        validate_timeframe(timeframe)
+        sections = _parse_include(include)
+        geo_list = parse_geos(geos)
+
+        result = {
+            "keyword": keyword,
+            "timeframe": timeframe,
+            "geos": geo_list,
+            "sections": [s for s in REPORT_SECTIONS if s in sections],
+        }
+        errors = {}
+
+        if "iot" in sections:
+            try:
+                from cli_anything.pytrends.core.search import interest_over_time
+                s.build_payload(kw_list=kw_list, cat=cat, timeframe=timeframe, geo="", gprop=gprop)
+                result["interest_over_time"] = _reset_df_index(interest_over_time(s))
+            except Exception as e:
+                errors["interest_over_time"] = str(e)
+
+        if "multi_geo" in sections:
+            try:
+                from cli_anything.pytrends.core.search import multi_geo_interest_over_time
+                mg = multi_geo_interest_over_time(
+                    session=s, kw_list=kw_list, geos=geo_list,
+                    cat=cat, timeframe=timeframe, gprop=gprop, wait_time=wait_time,
+                )
+                mg["results"] = {g: _reset_df_index(df) for g, df in mg.get("results", {}).items()}
+                result["multi_geo"] = mg
+            except Exception as e:
+                errors["multi_geo"] = str(e)
+
+        if "related" in sections:
+            try:
+                from cli_anything.pytrends.core.related import related_queries
+                s.build_payload(kw_list=kw_list, cat=cat, timeframe=timeframe, geo="", gprop=gprop)
+                related_raw = related_queries(s) or {}
+                trimmed = {}
+                for kw, payload in related_raw.items():
+                    payload = payload or {}
+                    top_df = payload.get("top")
+                    rising_df = payload.get("rising")
+                    trimmed[kw] = {
+                        "top": top_df.head(top_related) if top_df is not None else None,
+                        "rising": rising_df.head(top_related) if rising_df is not None else None,
+                    }
+                result["related_queries"] = trimmed
+            except Exception as e:
+                errors["related_queries"] = str(e)
+
+        if "by_region" in sections:
+            try:
+                from cli_anything.pytrends.core.search import interest_by_region
+                s.build_payload(kw_list=kw_list, cat=cat, timeframe=timeframe, geo="", gprop=gprop)
+                result["interest_by_region"] = _reset_df_index(
+                    interest_by_region(s, resolution="COUNTRY")
+                )
+            except Exception as e:
+                errors["interest_by_region"] = str(e)
+
+        if errors:
+            result["errors"] = errors
+
+        _output(ctx, result)
+    except Exception as e:
+        _handle_error(ctx, e)
+
+
 # ── Cache Commands ──────────────────────────────────────────────────────
 
 @cli.group("cache")
@@ -658,6 +778,7 @@ def _repl_help() -> str:
 
   daily KEYWORD --start YYYY-MM --stop YYYY-MM  Daily scaled data
   plot KEYWORDS --geo X --timeframe X --path P  Save trend plot
+  report KEYWORD [--timeframe X] [--geos X]     Composite dossier (iot+multi_geo+related+by_region)
 
   cache clear                                   Delete all cached entries
   cache stats                                   Show cache size and breakdown
@@ -678,6 +799,7 @@ def _dispatch_repl(ctx: click.Context, cmd: str, args: list):
         "explore": explore,
         "daily": daily_cmd,
         "plot": plot_cmd,
+        "report": report_cmd,
         "cache": cache_group,
     }
 

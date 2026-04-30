@@ -97,6 +97,49 @@ Save an interest-over-time chart image for one or more keywords.
 cli-anything-pytrends plot "python,javascript" --geo US --timeframe "today 12-m" --path output/trends.png
 ```
 
+### report - Composite Dossier (one call, structured JSON)
+Run the standard four-section dossier (interest over time, multi-geo, related queries,
+interest by region) for a single keyword in one call. Replaces 4 sequential calls
+agents would otherwise stitch together by hand.
+
+```bash
+# Defaults: timeframe=today 12-m, geos=US,GB,DE,FR,JP, all sections, top 10 related
+cli-anything-pytrends --json report "wegovy"
+
+# Subset of sections
+cli-anything-pytrends --json report "ozempic" --include iot,related
+
+# Custom geos and timeframe
+cli-anything-pytrends --json report "bitcoin" --timeframe "today 5-y" --geos US,GB,DE,JP,IN
+```
+
+Output shape (JSON):
+
+```json
+{
+  "keyword": "wegovy",
+  "timeframe": "today 12-m",
+  "geos": ["US", "GB", "DE", "FR", "JP"],
+  "sections": ["iot", "multi_geo", "related", "by_region"],
+  "interest_over_time": [...],
+  "multi_geo": { "keywords": [...], "results": { "US": [...], "GB": [...], ... } },
+  "related_queries": { "wegovy": { "top": [...], "rising": [...] } },
+  "interest_by_region": [...],
+  "errors": { "by_region": "..." }   // only present if a section failed
+}
+```
+
+Continues on per-section failure: rate-limited or failing sections appear under `errors`,
+successful sections still return data. Per-section results are individually cached, so
+re-running the same report mostly hits disk.
+
+**Options:**
+- `--timeframe STR` : default `today 12-m`
+- `--geos STR` : comma-separated geos for the multi_geo section (default `US,GB,DE,FR,JP`)
+- `--include STR` : subset of `iot,multi_geo,related,by_region`
+- `--top-related N` : cap top/rising rows per keyword (default 10)
+- `--cat`, `--gprop`, `--wait-time` : as in other commands
+
 ## Output Modes
 
 All commands support three output formats via global flags:
