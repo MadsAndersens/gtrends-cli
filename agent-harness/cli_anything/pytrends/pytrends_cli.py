@@ -13,6 +13,12 @@ import traceback
 import click
 
 from cli_anything.pytrends import __version__
+from cli_anything.pytrends.core.cache import (
+    DiskCache,
+    last_was_cache_hit,
+    parse_duration,
+    reset_hit_marker,
+)
 from cli_anything.pytrends.core.session import Session, SessionConfig
 from cli_anything.pytrends.utils.formatting import format_output
 from cli_anything.pytrends.utils.validators import (
@@ -28,10 +34,13 @@ _session: Session = None
 
 
 def _get_session(ctx: click.Context) -> Session:
-    """Get or create the session from click context."""
+    """Get or create the session from click context, syncing cache config."""
     global _session
     if _session is None:
         _session = Session()
+    _session.cache = ctx.obj.get("cache")
+    _session.cache_ttl = ctx.obj.get("cache_ttl")
+    reset_hit_marker()
     return _session
 
 
@@ -39,8 +48,17 @@ def _output(ctx: click.Context, data, label: str = "result"):
     """Format and print output based on context flags."""
     fmt = ctx.obj.get("format", "table")
     output_path = ctx.obj.get("output")
+    cached = last_was_cache_hit()
     try:
         formatted = format_output(data, fmt)
+        if fmt == "json":
+            try:
+                obj = json.loads(formatted)
+                if isinstance(obj, dict):
+                    obj["_cached"] = cached
+                    formatted = json.dumps(obj, indent=2, default=str)
+            except (ValueError, TypeError):
+                pass
         if output_path:
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
             with open(output_path, "w", encoding="utf-8") as f:
@@ -83,9 +101,17 @@ def _handle_error(ctx: click.Context, e: Exception):
 @click.option("--json", "use_json", is_flag=True, help="Output in JSON format")
 @click.option("--csv", "use_csv", is_flag=True, help="Output in CSV format")
 @click.option("--output", "-o", "output_path", default=None, type=click.Path(), help="Write output to FILE instead of stdout")
+@click.option(
+    "--cache",
+    "cache_duration",
+    default="1h",
+    show_default=True,
+    metavar="DURATION",
+    help="On-disk cache TTL (e.g. '1h', '30m', '24h', '7d'). Use 'off' to disable.",
+)
 @click.version_option(version=__version__, prog_name="cli-anything-pytrends")
 @click.pass_context
-def cli(ctx, use_json, use_csv, output_path):
+def cli(ctx, use_json, use_csv, output_path, cache_duration):
     """CLI harness for Google Trends via pytrends."""
     ctx.ensure_object(dict)
     if use_json:
@@ -95,6 +121,13 @@ def cli(ctx, use_json, use_csv, output_path):
     else:
         ctx.obj["format"] = "table"
     ctx.obj["output"] = output_path
+
+    try:
+        ttl = parse_duration(cache_duration)
+    except ValueError as e:
+        raise click.BadParameter(str(e), param_hint="--cache")
+    ctx.obj["cache_ttl"] = ttl
+    ctx.obj["cache"] = DiskCache() if ttl else None
 
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
@@ -469,6 +502,8 @@ def daily_cmd(ctx, keyword, start, stop, geo, wait_time):
             stop_month=stop_month,
             geo=geo,
             wait_time=wait_time,
+            cache=ctx.obj.get("cache"),
+            cache_ttl=ctx.obj.get("cache_ttl"),
         )
         _output(ctx, result)
     except Exception as e:
@@ -522,6 +557,38 @@ def plot_cmd(ctx, keywords, output_path, geo, geos, timeframe, cat, gprop, wait_
             from cli_anything.pytrends.core.plotting import save_interest_over_time_plot
             result = save_interest_over_time_plot(s, output_path=output_path, title=title)
         _output(ctx, result)
+    except Exception as e:
+        _handle_error(ctx, e)
+
+
+# ── Cache Commands ──────────────────────────────────────────────────────
+
+@cli.group("cache")
+@click.pass_context
+def cache_group(ctx):
+    """Inspect and manage the on-disk request cache."""
+    pass
+
+
+@cache_group.command("clear")
+@click.pass_context
+def cache_clear(ctx):
+    """Delete every entry in the on-disk cache."""
+    try:
+        cache = ctx.obj.get("cache") or DiskCache()
+        removed = cache.clear()
+        _output(ctx, {"cleared": removed, "cache_dir": cache.cache_dir})
+    except Exception as e:
+        _handle_error(ctx, e)
+
+
+@cache_group.command("stats")
+@click.pass_context
+def cache_stats(ctx):
+    """Show cache size, entry count, age, and per-command breakdown."""
+    try:
+        cache = ctx.obj.get("cache") or DiskCache()
+        _output(ctx, cache.stats())
     except Exception as e:
         _handle_error(ctx, e)
 
@@ -592,6 +659,9 @@ def _repl_help() -> str:
   daily KEYWORD --start YYYY-MM --stop YYYY-MM  Daily scaled data
   plot KEYWORDS --geo X --timeframe X --path P  Save trend plot
 
+  cache clear                                   Delete all cached entries
+  cache stats                                   Show cache size and breakdown
+
   help                                          Show this help
   quit                                          Exit REPL
 """
@@ -608,6 +678,7 @@ def _dispatch_repl(ctx: click.Context, cmd: str, args: list):
         "explore": explore,
         "daily": daily_cmd,
         "plot": plot_cmd,
+        "cache": cache_group,
     }
 
     # Shorthand mappings
