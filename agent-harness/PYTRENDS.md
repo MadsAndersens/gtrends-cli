@@ -27,6 +27,7 @@ a stateful command-line tool with JSON output mode for agent consumption.
 | `trending` | `now`, `today`, `realtime` | Trending/hot searches (standalone) |
 | `explore` | `suggestions`, `categories`, `top-charts` | Discovery and exploration |
 | `daily` | `fetch` | Daily data with monthly scaling (dailydata.py) |
+| `plot` | root command | Save interest-over-time chart images |
 
 ### State Model
 
@@ -40,6 +41,7 @@ The CLI maintains a session state:
 - **Table** (default): Human-readable pandas DataFrame rendering
 - **JSON** (`--json`): Machine-readable output for agent consumption
 - **CSV** (`--csv`): CSV export for data pipelines
+- **Plot image** (`plot --path FILE`): Saved line chart for trend comparison
 
 ### Key Design Decisions
 
@@ -48,6 +50,7 @@ The CLI maintains a session state:
 3. Session state persists across REPL commands
 4. Proxy rotation and retry are configurable at session level
 5. Error messages include actionable remediation hints
+6. Plotting uses matplotlib's non-interactive backend and returns metadata after saving
 
 ## Timeframe Format Reference
 

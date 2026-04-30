@@ -39,6 +39,7 @@ class TestCLIBasic:
         assert "explore" in result.output
         assert "related" in result.output
         assert "daily" in result.output
+        assert "plot" in result.output
         assert "repl" in result.output
 
     def test_cli_no_command(self):
@@ -221,3 +222,14 @@ class TestCLISubprocess:
         result = self._run("trending", "--help")
         assert result.returncode == 0
         assert "now" in result.stdout
+
+    def test_subprocess_plot_help(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "cli_anything.pytrends.pytrends_cli", "plot", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        assert "--path" in result.stdout
+        assert "--timeframe" in result.stdout
